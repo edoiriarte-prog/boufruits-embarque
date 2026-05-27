@@ -842,16 +842,30 @@ function showSyncStatus(status,msg){
 async function pullFromGSheet(){
   if(!GS_ENABLED)return;showSyncStatus("syncing","Sincronizando...");
   try{
-    var res=await fetch(API_URL+"?action=getAll");
+    var res=await fetch(API_URL+"?action=getAll&t="+Date.now());
     var json=await res.json();
     if(json.ok){
       var cloud=json.data||[];
-      if(cloud.length>0){
-        var cloudIds=cloud.map(function(r){return r.id;});
-        var localOnly=registros.filter(function(r){return !cloudIds.includes(r.id);});
-        registros=cloud.concat(localOnly);save();updateBadge();renderRegs();
-        showSyncStatus("ok",cloud.length+" embarques");toast("☁ "+cloud.length+" embarques sincronizados");
-      }else{showSyncStatus("ok","Nube vacía");toast("☁ Conectado — sin registros en la nube");}
+      // Subir registros locales que no están en la nube
+      var cloudIds=cloud.map(function(r){return r.id;});
+      var localOnly=registros.filter(function(r){return !cloudIds.includes(r.id);});
+      // Subir locales a la nube
+      for(var i=0;i<localOnly.length;i++){
+        try{
+          var u=currentUser?currentUser.email:"sistema";
+          await fetch(API_URL,{method:"POST",headers:{"Content-Type":"application/json"},
+            body:JSON.stringify({action:"save",registro:localOnly[i],usuario:u})});
+        }catch(e){}
+      }
+      // La nube gana — descargar todos
+      var res2=await fetch(API_URL+"?action=getAll&t="+Date.now());
+      var json2=await res2.json();
+      if(json2.ok){
+        registros=json2.data||[];
+        save();updateBadge();renderRegs();
+        showSyncStatus("ok",registros.length+" embarques");
+        toast("☁ "+registros.length+" embarques sincronizados");
+      }
     }else{throw new Error(json.error||"Error API");}
   }catch(err){showSyncStatus("error","Sin conexión");console.warn("Sync:",err.message);}
 }
